@@ -32,6 +32,7 @@ namespace OC\AppFramework\Bootstrap;
 use Closure;
 use function array_shift;
 use OC\Support\CrashReport\Registry;
+use OCA\UserMigration\Export\IExportOperation;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\AppFramework\Middleware;
@@ -64,6 +65,9 @@ class RegistrationContext {
 
 	/** @var ServiceRegistration<ILinkAction>[] */
 	private $profileLinkActions = [];
+
+	/** @var ServiceRegistration<IExportOperation>[] */
+	private $exportOperations = [];
 
 	/** @var ServiceFactoryRegistration[] */
 	private $services = [];
@@ -259,6 +263,13 @@ class RegistrationContext {
 					$actionClass
 				);
 			}
+
+			public function registerExportOperation(string $operationClass): void {
+				$this->context->registerExportOperation(
+					$this->appId,
+					$operationClass
+				);
+			}
 		};
 	}
 
@@ -347,6 +358,13 @@ class RegistrationContext {
 	 */
 	public function registerProfileLinkAction(string $appId, string $actionClass): void {
 		$this->profileLinkActions[] = new ServiceRegistration($appId, $actionClass);
+	}
+
+	/**
+	 * @psalm-param class-string<IExportOperation> $operationClass
+	 */
+	public function registerExportOperation(string $appId, string $operationClass): void {
+		$this->exportOperations[] = new ServiceRegistration($appId, $operationClass);
 	}
 
 	/**
@@ -599,5 +617,12 @@ class RegistrationContext {
 	 */
 	public function getProfileLinkActions(): array {
 		return $this->profileLinkActions;
+	}
+
+	/**
+	 * @return ServiceRegistration<IExportOperation>[]
+	 */
+	public function getExportOperations(): array {
+		return $this->exportOperations;
 	}
 }

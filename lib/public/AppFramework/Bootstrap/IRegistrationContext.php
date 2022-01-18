@@ -264,4 +264,15 @@ interface IRegistrationContext {
 	 * @since 23.0.0
 	 */
 	public function registerProfileLinkAction(string $actionClass): void;
+
+	/**
+	 * Register an implementation of \OCA\UserMigration\Export\IExportOperation that
+	 * will handle the implementation of an export operation
+	 *
+	 * @param string $operationClass
+	 * @psalm-param class-string<\OCA\UserMigration\Export\IExportOperation> $operationClass
+	 * @return void
+	 * @since 24.0.0
+	 */
+	public function registerExportOperation(string $operationClass): void;
 }
