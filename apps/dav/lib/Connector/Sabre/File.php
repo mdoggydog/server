@@ -43,9 +43,11 @@ use OC\AppFramework\Http\Request;
 use OC\Files\Filesystem;
 use OC\Files\Stream\HashWrapper;
 use OC\Files\View;
+use OC\ServerNotAvailableException;
 use OCA\DAV\Connector\Sabre\Exception\EntityTooLarge;
 use OCA\DAV\Connector\Sabre\Exception\FileLocked;
 use OCA\DAV\Connector\Sabre\Exception\Forbidden as DAVForbiddenException;
+use OCA\DAV\Connector\Sabre\Exception\InvalidPath;
 use OCA\DAV\Connector\Sabre\Exception\UnsupportedMediaType;
 use OCP\App\IAppManager;
 use OCP\Encryption\Exceptions\GenericEncryptionException;
@@ -61,6 +63,7 @@ use OCP\Files\NotFoundException;
 use OCP\Files\NotPermittedException;
 use OCP\Files\Storage;
 use OCP\Files\StorageNotAvailableException;
+use OCP\HintException;
 use OCP\IConfig;
 use OCP\IRequest;
 use OCP\Lock\ILockingProvider;
@@ -81,10 +84,10 @@ class File extends Node implements IFile {
 	/**
 	 * Sets up the node, expects a full path name
 	 *
-	 * @param \OC\Files\View $view
-	 * @param \OCP\Files\FileInfo $info
-	 * @param \OCP\Share\IManager $shareManager
-	 * @param \OC\AppFramework\Http\Request $request
+	 * @param View $view
+	 * @param FileInfo $info
+	 * @param IManager|null $shareManager
+	 * @param Request|null $request
 	 */
 	public function __construct(View $view, FileInfo $info, IManager $shareManager = null, Request $request = null) {
 		parent::__construct($view, $info, $shareManager);
@@ -115,18 +118,17 @@ class File extends Node implements IFile {
 	 *
 	 * @param resource $data
 	 *
-	 * @throws Forbidden
-	 * @throws UnsupportedMediaType
-	 * @throws BadRequest
-	 * @throws Exception
-	 * @throws EntityTooLarge
-	 * @throws ServiceUnavailable
-	 * @throws FileLocked
 	 * @return string|null
+	 * @throws DAVForbiddenException
+	 * @throws Exception
+	 * @throws InvalidPath
+	 * @throws FileLocked
+	 * @throws Forbidden
+	 * @throws ServiceUnavailable
 	 */
 	public function put($data) {
 		try {
-			$exists = $this->fileView->file_exists($this->path);
+			$exists = (bool) $this->fileView->file_exists($this->path);
 			if ($this->info && $exists && !$this->info->isUpdateable()) {
 				throw new Forbidden();
 			}
@@ -150,7 +152,7 @@ class File extends Node implements IFile {
 		[$partStorage] = $this->fileView->resolvePath($this->path);
 		$needsPartFile = $partStorage->needsPartFile() && (strlen($this->path) > 1);
 
-		$view = \OC\Files\Filesystem::getView();
+		$view = Filesystem::getView();
 
 		if ($needsPartFile) {
 			// mark file as partial while uploading (ignored by the scanner)
@@ -284,9 +286,7 @@ class File extends Node implements IFile {
 					try {
 						$this->acquireLock(ILockingProvider::LOCK_EXCLUSIVE);
 					} catch (LockedException $ex) {
-						if ($needsPartFile) {
-							$partStorage->unlink($internalPartPath);
-						}
+						$partStorage->unlink($internalPartPath);
 						throw new FileLocked($e->getMessage(), $e->getCode(), $e);
 					}
 				}
@@ -361,7 +361,7 @@ class File extends Node implements IFile {
 		return '"' . $this->info->getEtag() . '"';
 	}
 
-	private function getPartFileBasePath($path) {
+	private function getPartFileBasePath(string $path): string {
 		$partFileInStorage = \OC::$server->get(IConfig::class)->getSystemValue('part_file_in_storage', true);
 		if ($partFileInStorage) {
 			return $path;
@@ -371,9 +371,13 @@ class File extends Node implements IFile {
 	}
 
 	/**
-	 * @param string $path
+	 * @param bool $exists
+	 * @param string|null $path
+	 * @return bool|mixed
+	 * @throws HintException
+	 * @throws ServerNotAvailableException
 	 */
-	private function emitPreHooks($exists, $path = null) {
+	private function emitPreHooks(bool $exists, string $path = null): bool {
 		if (is_null($path)) {
 			$path = $this->path;
 		}
@@ -381,42 +385,45 @@ class File extends Node implements IFile {
 		$run = true;
 
 		if (!$exists) {
-			\OC_Hook::emit(\OC\Files\Filesystem::CLASSNAME, \OC\Files\Filesystem::signal_create, [
-				\OC\Files\Filesystem::signal_param_path => $hookPath,
-				\OC\Files\Filesystem::signal_param_run => &$run,
+			\OC_Hook::emit(Filesystem::CLASSNAME, Filesystem::signal_create, [
+				Filesystem::signal_param_path => $hookPath,
+				Filesystem::signal_param_run => &$run,
 			]);
 		} else {
-			\OC_Hook::emit(\OC\Files\Filesystem::CLASSNAME, \OC\Files\Filesystem::signal_update, [
-				\OC\Files\Filesystem::signal_param_path => $hookPath,
-				\OC\Files\Filesystem::signal_param_run => &$run,
+			\OC_Hook::emit(Filesystem::CLASSNAME, Filesystem::signal_update, [
+				Filesystem::signal_param_path => $hookPath,
+				Filesystem::signal_param_run => &$run,
 			]);
 		}
-		\OC_Hook::emit(\OC\Files\Filesystem::CLASSNAME, \OC\Files\Filesystem::signal_write, [
-			\OC\Files\Filesystem::signal_param_path => $hookPath,
-			\OC\Files\Filesystem::signal_param_run => &$run,
+		\OC_Hook::emit(Filesystem::CLASSNAME, Filesystem::signal_write, [
+			Filesystem::signal_param_path => $hookPath,
+			Filesystem::signal_param_run => &$run,
 		]);
 		return $run;
 	}
 
 	/**
-	 * @param string $path
+	 * @param bool $exists
+	 * @param string|null $path
+	 * @throws HintException
+	 * @throws ServerNotAvailableException
 	 */
-	private function emitPostHooks($exists, $path = null) {
+	private function emitPostHooks(bool $exists, string $path = null): void {
 		if (is_null($path)) {
 			$path = $this->path;
 		}
 		$hookPath = Filesystem::getView()->getRelativePath($this->fileView->getAbsolutePath($path));
 		if (!$exists) {
-			\OC_Hook::emit(\OC\Files\Filesystem::CLASSNAME, \OC\Files\Filesystem::signal_post_create, [
-				\OC\Files\Filesystem::signal_param_path => $hookPath
+			\OC_Hook::emit(Filesystem::CLASSNAME, Filesystem::signal_post_create, [
+				Filesystem::signal_param_path => $hookPath
 			]);
 		} else {
-			\OC_Hook::emit(\OC\Files\Filesystem::CLASSNAME, \OC\Files\Filesystem::signal_post_update, [
-				\OC\Files\Filesystem::signal_param_path => $hookPath
+			\OC_Hook::emit(Filesystem::CLASSNAME, Filesystem::signal_post_update, [
+				Filesystem::signal_param_path => $hookPath
 			]);
 		}
-		\OC_Hook::emit(\OC\Files\Filesystem::CLASSNAME, \OC\Files\Filesystem::signal_post_write, [
-			\OC\Files\Filesystem::signal_param_path => $hookPath
+		\OC_Hook::emit(Filesystem::CLASSNAME, Filesystem::signal_post_write, [
+			Filesystem::signal_param_path => $hookPath
 		]);
 	}
 
@@ -424,7 +431,10 @@ class File extends Node implements IFile {
 	 * Returns the data
 	 *
 	 * @return resource
-	 * @throws Forbidden
+	 * @throws DAVForbiddenException
+	 * @throws Exception
+	 * @throws FileLocked
+	 * @throws NotFound
 	 * @throws ServiceUnavailable
 	 */
 	public function get() {
@@ -459,7 +469,7 @@ class File extends Node implements IFile {
 	 * Delete the current file
 	 *
 	 * @throws Forbidden
-	 * @throws ServiceUnavailable
+	 * @throws ServiceUnavailable|FileLocked
 	 */
 	public function delete() {
 		if (!$this->info->isDeletable()) {
@@ -521,7 +531,7 @@ class File extends Node implements IFile {
 	 * @throws NotImplemented
 	 * @throws ServiceUnavailable
 	 */
-	private function createFileChunked($data) {
+	private function createFileChunked($data): ?string {
 		[$path, $name] = \Sabre\Uri\split($this->path);
 
 		$info = \OC_FileChunking::decodeName($name);
@@ -553,7 +563,7 @@ class File extends Node implements IFile {
 			/** @var \OC\Files\Storage\Storage $targetStorage */
 			[$targetStorage, $targetInternalPath] = $this->fileView->resolvePath($targetPath);
 
-			$exists = $this->fileView->file_exists($targetPath);
+			$exists = (bool) $this->fileView->file_exists($targetPath);
 
 			try {
 				$this->fileView->lockFile($targetPath, ILockingProvider::LOCK_SHARED);
@@ -636,10 +646,10 @@ class File extends Node implements IFile {
 	 *
 	 * @param \Exception $e
 	 *
-	 * @throws \Sabre\DAV\Exception
+	 * @throws Exception
 	 */
 	private function convertToSabreException(\Exception $e) {
-		if ($e instanceof \Sabre\DAV\Exception) {
+		if ($e instanceof Exception) {
 			throw $e;
 		}
 		if ($e instanceof NotPermittedException) {
@@ -678,7 +688,7 @@ class File extends Node implements IFile {
 			throw new NotFound('File not found: ' . $e->getMessage(), 0, $e);
 		}
 
-		throw new \Sabre\DAV\Exception($e->getMessage(), 0, $e);
+		throw new Exception($e->getMessage(), 0, $e);
 	}
 
 	/**
@@ -686,7 +696,7 @@ class File extends Node implements IFile {
 	 *
 	 * @return string|null
 	 */
-	public function getChecksum() {
+	public function getChecksum(): ?string {
 		if (!$this->info) {
 			return null;
 		}
