@@ -36,6 +36,7 @@ namespace OCA\DAV;
 
 use OC\Authentication\TwoFactorAuth\Manager as TwoFactorAuthManager;
 use OC\EventDispatcher\SymfonyAdapter;
+use OC\Files\AppData\Factory as AppDataFactory;
 use OC\Security\Bruteforce\Throttler;
 use OCA\DAV\CalDAV\BirthdayCalendar\EnablePlugin;
 use OCA\DAV\CalDAV\ICSExportPlugin\ICSExportPlugin;
@@ -210,7 +211,7 @@ class Server {
 			$this->server->addPlugin(new MultiGetExportPlugin());
 			$this->server->addPlugin(new HasPhotoPlugin());
 			$this->server->addPlugin(new ImageExportPlugin(new PhotoCache(
-				\OC::$server->getAppDataDir('dav-photocache'),
+				\OC::$server->get(AppDataFactory::class)->get('dav-photocache'),
 				\OC::$server->get(LoggerInterface::class))
 			));
 		}
