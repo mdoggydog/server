@@ -32,25 +32,49 @@ declare(strict_types=1);
 namespace OCA\AdminAudit\Actions;
 
 use OCP\IUser;
+use OCP\EventDispatcher\IEventListener;
+use OCP\EventDispatcher\Event;
+use OCP\User\Events\UserDeletedEvent;
+use OCP\User\Events\UserCreatedEvent;
+use OCP\User\Events\UserChangedEvent;
+use OCP\User\Events\PasswordUpdatedEvent;
 
 /**
  * Class UserManagement logs all user management related actions.
  *
  * @package OCA\AdminAudit\Actions
  */
-class UserManagement extends Action {
+class UserManagement extends Action implements IEventListener {
+	public function handle(Event $event): void {
+		if ($event instanceof UserDeletedEvent) {
+			$this->delete($event);
+		}
+
+		if ($event instanceof UserCreatedEvent) {
+			$this->create($event);
+		}
+
+		if ($event instanceof UserChangedEvent) {
+			$this->change($event);
+		}
+
+		if ($event instanceof PasswordUpdatedEvent) {
+			$this->setPassword($event->getUser());
+		}
+	}
+
 	/**
 	 * Log creation of users
 	 *
-	 * @param array $params
+	 * @param UserCreatedEvent $event
 	 */
-	public function create(array $params): void {
+	public function create(UserCreatedEvent $event): void {
 		$this->log(
 			'User created: "%s"',
-			$params,
 			[
-				'uid',
-			]
+				'uid' => $event->getUser()->getUID(),
+			],
+			['uid']
 		);
 	}
 
@@ -70,15 +94,15 @@ class UserManagement extends Action {
 	/**
 	 * Log deletion of users
 	 *
-	 * @param array $params
+	 * @param BeforeUserDeletedEvent $event
 	 */
-	public function delete(array $params): void {
+	public function delete(UserDeletedEvent $event): void {
 		$this->log(
 			'User deleted: "%s"',
-			$params,
 			[
-				'uid',
-			]
+				'uid' => $event->getUser()->getUID(),
+			],
+			['uid']
 		);
 	}
 
@@ -98,16 +122,16 @@ class UserManagement extends Action {
 	/**
 	 * Log enabling of users
 	 *
-	 * @param array $params
+	 * @param UserChangedEvent $event
 	 */
-	public function change(array $params): void {
-		switch ($params['feature']) {
+	public function change(UserChangedEvent $event): void {
+		switch ($event->getFeature()) {
 			case 'enabled':
 				$this->log(
-					$params['value'] === true
+					$event->getValue() === true
 						? 'User enabled: "%s"'
 						: 'User disabled: "%s"',
-					['user' => $params['user']->getUID()],
+					['user' => $event->getUser()->getUID()],
 					[
 						'user',
 					]
@@ -116,7 +140,7 @@ class UserManagement extends Action {
 			case 'eMailAddress':
 				$this->log(
 					'Email address changed for user %s',
-					['user' => $params['user']->getUID()],
+					['user' => $event->getUser()->getUID()],
 					[
 						'user',
 					]

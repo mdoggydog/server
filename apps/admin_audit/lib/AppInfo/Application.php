@@ -65,6 +65,10 @@ use OCP\Log\Audit\CriticalActionPerformedEvent;
 use OCP\Log\ILogFactory;
 use OCP\Share;
 use OCP\Util;
+use OCP\User\Events\UserDeletedEvent;
+use OCP\User\Events\UserCreatedEvent;
+use OCP\User\Events\UserChangedEvent;
+use OCP\User\Events\PasswordUpdatedEvent;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\EventDispatcher\GenericEvent;
@@ -80,6 +84,11 @@ class Application extends App implements IBootstrap {
 
 	public function register(IRegistrationContext $context): void {
 		$context->registerEventListener(CriticalActionPerformedEvent::class, CriticalActionPerformedEventListener::class);
+
+		$context->registerEventListener(UserChangedEvent::class, UserManagement::class);
+		$context->registerEventListener(UserDeletedEvent::class, UserManagement::class);
+		$context->registerEventListener(UserCreatedEvent::class, UserManagement::class);
+		$context->registerEventListener(PasswordUpdatedEvent::class, UserManagement::class);
 	}
 
 	public function boot(IBootContext $context): void {
@@ -132,14 +141,10 @@ class Application extends App implements IBootstrap {
 
 	private function userManagementHooks(LoggerInterface $logger,
 										 IUserSession $userSession): void {
+
+		// TODO add event for assignedUserId and postUnassignedUserId
 		$userActions = new UserManagement($logger);
-
-		Util::connectHook('OC_User', 'post_createUser', $userActions, 'create');
-		Util::connectHook('OC_User', 'post_deleteUser', $userActions, 'delete');
-		Util::connectHook('OC_User', 'changeUser', $userActions, 'change');
-
 		assert($userSession instanceof UserSession);
-		$userSession->listen('\OC\User', 'postSetPassword', [$userActions, 'setPassword']);
 		$userSession->listen('\OC\User', 'assignedUserId', [$userActions, 'assign']);
 		$userSession->listen('\OC\User', 'postUnassignedUserId', [$userActions, 'unassign']);
 	}
