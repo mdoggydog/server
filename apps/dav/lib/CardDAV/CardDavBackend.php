@@ -650,21 +650,23 @@ class CardDavBackend implements BackendInterface, SyncSupport {
 	 * @param string $cardData
 	 * @return string
 	 */
-	public function createCard($addressBookId, $cardUri, $cardData) {
+	public function createCard($addressBookId, $cardUri, $cardData, $checkAlreadyExists = true) {
 		$etag = md5($cardData);
 		$uid = $this->getUID($cardData);
 
-		$q = $this->db->getQueryBuilder();
-		$q->select('uid')
-			->from($this->dbCardsTable)
-			->where($q->expr()->eq('addressbookid', $q->createNamedParameter($addressBookId)))
-			->andWhere($q->expr()->eq('uid', $q->createNamedParameter($uid)))
-			->setMaxResults(1);
-		$result = $q->execute();
-		$count = (bool)$result->fetchOne();
-		$result->closeCursor();
-		if ($count) {
-			throw new \Sabre\DAV\Exception\BadRequest('VCard object with uid already exists in this addressbook collection.');
+		if ($checkAlreadyExists) {
+			$q = $this->db->getQueryBuilder();
+			$q->select('uid')
+				->from($this->dbCardsTable)
+				->where($q->expr()->eq('addressbookid', $q->createNamedParameter($addressBookId)))
+				->andWhere($q->expr()->eq('uid', $q->createNamedParameter($uid)))
+				->setMaxResults(1);
+			$result = $q->execute();
+			$count = (bool)$result->fetchOne();
+			$result->closeCursor();
+			if ($count) {
+				throw new \Sabre\DAV\Exception\BadRequest('VCard object with uid already exists in this addressbook collection.');
+			}
 		}
 
 		$query = $this->db->getQueryBuilder();
