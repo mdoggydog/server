@@ -104,10 +104,6 @@ class HookManager {
 			$this->postDeleteUser(['uid' => $uid]);
 		});
 		\OC::$server->getUserManager()->listen('\OC\User', 'postUnassignedUserId', [$this, 'postUnassignedUserId']);
-		Util::connectHook('OC_User',
-			'changeUser',
-			$this,
-			'changeUser');
 	}
 
 	public function postCreateUser($params) {
@@ -159,11 +155,6 @@ class HookManager {
 		if (isset($this->usersToDelete[$uid])) {
 			$this->syncService->deleteUser($this->usersToDelete[$uid]);
 		}
-	}
-
-	public function changeUser($params) {
-		$user = $params['user'];
-		$this->syncService->updateUser($user);
 	}
 
 	public function firstLogin(IUser $user = null) {
